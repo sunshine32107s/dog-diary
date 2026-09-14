@@ -591,7 +591,7 @@ export default function Home() {
 
               {/* 치우는 오늘 케어 5종 */}
               <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-100/80 space-y-2">
-                <span className="text-xs font-bold text-amber-900 block">✨ 치우는 오늘</span>
+                <span className="text-xs font-bold text-amber-900 block">✨ 치우 미용실</span>
                 
                 <div className="grid grid-cols-3 gap-1.5">
                   {[

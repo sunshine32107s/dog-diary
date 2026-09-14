@@ -13,13 +13,14 @@ import {
   Loader2, 
   X,
   Trash2,
+  Pencil,
+  AlertCircle,
   ChevronLeft,
   ChevronRight,
   BookOpen,
   BarChart3,
   Check,
   PenLine,
-  Filter,
   Image as ImageIcon
 } from 'lucide-react';
 
@@ -42,10 +43,18 @@ export default function Home() {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 3개 탭 분리: write(오늘 쓰기) / feed(모아보기) / calendar(달력·통계)
+  // 탭 상태: write(오늘 쓰기) / feed(모아보기) / calendar(달력·통계)
   const [activeTab, setActiveTab] = useState<'write' | 'feed' | 'calendar'>('write');
 
-  // 모아보기 및 달력 기준 연/월 (기본: 오늘 날짜 기준 월)
+  // 수정(Edit) 모드 관리
+  const [editingLogId, setEditingLogId] = useState<string | null>(null);
+  const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
+
+  // 삭제(Delete) 확인 모달 타깃
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; photo_url: string | null; date: string } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // 모아보기 및 달력 기준 연/월
   const [filterMonthDate, setFilterMonthDate] = useState(new Date());
   const [showAllMonths, setShowAllMonths] = useState(false);
   const [feedFilterTag, setFeedFilterTag] = useState<'all' | 'walk' | 'photo'>('all');
@@ -89,50 +98,98 @@ export default function Home() {
     fetchLogs();
   }, []);
 
-  // 2. 삭제 기능
-  const handleDelete = async (id: string, photoUrl: string | null) => {
-    if (!confirm('이 기록을 삭제할까요?')) return;
+  // 2. 수정 모드 진입
+  const handleStartEdit = (log: DailyLog) => {
+    setEditingLogId(log.id);
+    setDate(log.date);
+    setWalked(log.walked);
+    setPoopCount(log.poop_count);
+    setMemo(log.memo || '');
+    setBath(log.bath);
+    setEarClean(log.ear_clean);
+    setPlay(log.play);
+    setPawClean(log.paw_clean);
+    setBrush(log.brush);
+    setExistingPhotoUrl(log.photo_url);
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setActiveTab('write');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 수정 취소
+  const handleCancelEdit = () => {
+    setEditingLogId(null);
+    setExistingPhotoUrl(null);
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setDate(new Date().toISOString().split('T')[0]);
+    setWalked(false);
+    setPoopCount(1);
+    setMemo('');
+    setBath(false);
+    setEarClean(false);
+    setPlay(false);
+    setPawClean(false);
+    setBrush(false);
+  };
+
+  // 3. 삭제 확정 처리
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
 
     try {
-      const { error } = await supabase.from('daily_logs').delete().eq('id', id);
+      setIsDeleting(true);
+      const { error } = await supabase.from('daily_logs').delete().eq('id', deleteTarget.id);
       if (error) throw error;
 
-      if (photoUrl) {
-        const pathParts = photoUrl.split('/');
+      if (deleteTarget.photo_url) {
+        const pathParts = deleteTarget.photo_url.split('/');
         const fileName = pathParts[pathParts.length - 1];
         await supabase.storage.from('dog-photos').remove([fileName]);
       }
 
-      setLogs((prev) => prev.filter((item) => item.id !== id));
+      setLogs((prev) => prev.filter((item) => item.id !== deleteTarget.id));
+      
+      // 만약 수정 중이던 기록을 지웠다면 폼 초기화
+      if (editingLogId === deleteTarget.id) {
+        handleCancelEdit();
+      }
     } catch (err: any) {
       alert(`삭제 중 오류가 발생했습니다: ${err.message}`);
+    } finally {
+      setIsDeleting(false);
+      setDeleteTarget(null);
     }
   };
 
-  // 3. 사진 선택
+  // 4. 사진 선택 및 제거
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
+      setExistingPhotoUrl(null); // 새 사진을 골랐으므로 기존 사진 비움
     }
   };
 
   const removePhoto = () => {
     setSelectedFile(null);
     setPreviewUrl(null);
+    setExistingPhotoUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 4. 저장 (Upsert)
+  // 5. 저장 (신규 등록 or 수정)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
 
     try {
       setSubmitting(true);
-      let photoUrl: string | null = null;
+      let photoUrl: string | null = existingPhotoUrl;
 
+      // 새로 첨부된 사진이 있을 때만 압축 후 업로드
       if (selectedFile) {
         const compressionOptions = {
           maxSizeMB: 0.8,
@@ -160,10 +217,11 @@ export default function Home() {
         photoUrl = publicUrlData.publicUrl;
       }
 
-      const { error: insertError } = await supabase
-        .from('daily_logs')
-        .upsert(
-          {
+      if (editingLogId) {
+        // [수정 모드]: 해당 ID 레코드 업데이트
+        const { error: updateError } = await supabase
+          .from('daily_logs')
+          .update({
             date,
             walked,
             poop_count: poopCount,
@@ -174,20 +232,35 @@ export default function Home() {
             play,
             paw_clean: pawClean,
             brush,
-          },
-          { onConflict: 'date' }
-        );
+          })
+          .eq('id', editingLogId);
 
-      if (insertError) throw insertError;
+        if (updateError) throw updateError;
+      } else {
+        // [신규 등록]: 같은 날짜면 Upsert
+        const { error: insertError } = await supabase
+          .from('daily_logs')
+          .upsert(
+            {
+              date,
+              walked,
+              poop_count: poopCount,
+              photo_url: photoUrl,
+              memo: memo.trim() || null,
+              bath,
+              ear_clean: earClean,
+              play,
+              paw_clean: pawClean,
+              brush,
+            },
+            { onConflict: 'date' }
+          );
+
+        if (insertError) throw insertError;
+      }
 
       // 폼 초기화 후 '모아보기' 탭으로 이동
-      setMemo('');
-      setBath(false);
-      setEarClean(false);
-      setPlay(false);
-      setPawClean(false);
-      setBrush(false);
-      removePhoto();
+      handleCancelEdit();
       await fetchLogs();
       setActiveTab('feed');
     } catch (err: any) {
@@ -265,7 +338,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#FCFAF6] text-[#3B342B] pb-24 px-4 font-gowun">
-{/* 커스텀 폰트(font.ttf) 적용 */}
+      {/* 폰트 적용 (public/font.ttf) */}
       <style jsx global>{`
         @font-face {
           font-family: 'ChiuFont';
@@ -292,7 +365,7 @@ export default function Home() {
           </h1>
         </header>
 
-        {/* 3. 3개 탭 분리 네비게이션 */}
+        {/* 3개 탭 네비게이션 */}
         <nav className="grid grid-cols-3 bg-amber-100/70 p-1 rounded-2xl mb-5 gap-1">
           <button
             onClick={() => setActiveTab('write')}
@@ -302,7 +375,8 @@ export default function Home() {
                 : 'text-amber-900/70 hover:text-amber-950'
             }`}
           >
-            <PenLine className="w-3.5 h-3.5" /> 오늘 기록
+            <PenLine className="w-3.5 h-3.5" /> 
+            {editingLogId ? '수정 중 ✏️' : '오늘 기록'}
           </button>
           
           <button
@@ -329,13 +403,28 @@ export default function Home() {
         </nav>
 
         {/* ========================================================= */}
-        {/* 탭 1: 오늘 기록 작성 */}
+        {/* 탭 1: 기록 작성 및 수정 */}
         {/* ========================================================= */}
         {activeTab === 'write' && (
           <section className="bg-white rounded-3xl p-5 border border-amber-200/80 shadow-xs">
+            
+            {/* 수정 모드 알림 배너 */}
+            {editingLogId && (
+              <div className="flex items-center justify-between bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2 rounded-2xl text-xs font-bold mb-4">
+                <span>✏️ {formatDate(date)} 기록을 수정하는 중이에요</span>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  className="text-blue-600 underline text-[11px] hover:text-blue-800"
+                >
+                  수정 취소
+                </button>
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
               
-              {/* 1. 날짜 선택창 최적화 (잘림 방지) */}
+              {/* 날짜 선택 */}
               <div className="flex items-center justify-between pb-3 border-b border-amber-50">
                 <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
                   <CalendarIcon className="w-4 h-4 text-blue-600" /> 기록 날짜
@@ -389,10 +478,11 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 치우는 오늘: 1행 3개 / 2행 2개 정렬 */}
+              {/* 치우는 오늘 */}
               <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-100/80 space-y-2">
                 <span className="text-xs font-bold text-amber-900 block">✨ 치우는 오늘</span>
                 
+                {/* 1행: 귀 청소, 빗질, 목욕 */}
                 <div className="grid grid-cols-3 gap-1.5">
                   {[
                     { label: '귀 청소 👂', val: earClean, setVal: setEarClean },
@@ -415,6 +505,7 @@ export default function Home() {
                   ))}
                 </div>
 
+                {/* 2행: 총캉총캉, 클린발바닥 */}
                 <div className="grid grid-cols-2 gap-1.5">
                   {[
                     { label: '총캉총캉 ⚡', val: play, setVal: setPlay },
@@ -437,7 +528,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 사진 첨부: 치우의 오늘 모습 */}
+              {/* 사진 첨부 & 기존/새 사진 미리보기 */}
               <div className="space-y-1.5">
                 <input
                   type="file"
@@ -447,16 +538,26 @@ export default function Home() {
                   className="hidden"
                 />
                 
-                {previewUrl ? (
+                {previewUrl || existingPhotoUrl ? (
                   <div className="relative rounded-2xl overflow-hidden aspect-square bg-stone-100 border border-amber-200">
-                    <img src={previewUrl} alt="미리보기" className="w-full h-full object-cover" />
+                    <img 
+                      src={previewUrl || existingPhotoUrl || ''} 
+                      alt="미리보기" 
+                      className="w-full h-full object-cover" 
+                    />
                     <button
                       type="button"
                       onClick={removePhoto}
-                      className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-full text-white"
+                      className="absolute top-2 right-2 p-1.5 bg-black/60 hover:bg-black/80 rounded-full text-white transition-colors"
+                      title="사진 지우기"
                     >
                       <X className="w-4 h-4" />
                     </button>
+                    {existingPhotoUrl && !previewUrl && (
+                      <span className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-md backdrop-blur-xs">
+                        기존 등록된 사진
+                      </span>
+                    )}
                   </div>
                 ) : (
                   <button
@@ -481,7 +582,7 @@ export default function Home() {
                 />
               </div>
 
-              {/* 저장 버튼 */}
+              {/* 저장 / 수정 버튼 */}
               <button
                 type="submit"
                 disabled={submitting}
@@ -489,6 +590,8 @@ export default function Home() {
               >
                 {submitting ? (
                   <><Loader2 className="w-4 h-4 animate-spin" /> 저장하는 중...</>
+                ) : editingLogId ? (
+                  '치우의 하루 수정 완료 🐾'
                 ) : (
                   '치우의 하루 저장하기 🐾'
                 )}
@@ -498,7 +601,7 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* 탭 2: 기록 모아보기 (월별 필터 + 퀵 태그 필터) */}
+        {/* 탭 2: 기록 모아보기 */}
         {/* ========================================================= */}
         {activeTab === 'feed' && (
           <section className="space-y-4">
@@ -529,7 +632,7 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* 퀵 필터 버튼들 */}
+              {/* 퀵 필터 버튼 */}
               <div className="flex items-center justify-between pt-2 border-t border-amber-50">
                 <div className="flex gap-1">
                   <button
@@ -577,7 +680,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 카드 목록 리스트 */}
+            {/* 카드 목록 */}
             {loading ? (
               <div className="text-center py-16 text-amber-800/60">
                 <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
@@ -587,7 +690,7 @@ export default function Home() {
               <div className="bg-white rounded-3xl p-10 text-center border border-amber-100 shadow-xs">
                 <p className="text-3xl mb-2">🐶</p>
                 <p className="text-sm font-bold text-amber-950">해당 조건의 기록이 없어요</p>
-                <p className="text-xs text-amber-700/60 mt-1">다른 달을 선택하거나 새 기록을 작성해 보세요!</p>
+                <p className="text-xs text-amber-700/60 mt-1">새 기록을 작성하거나 필터를 바꿔보세요!</p>
               </div>
             ) : (
               filteredLogs.map((log) => (
@@ -595,18 +698,27 @@ export default function Home() {
                   key={log.id}
                   className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs space-y-3"
                 >
-                  {/* 날짜 및 삭제 버튼 */}
+                  {/* 날짜, 수정 버튼, 삭제 버튼 */}
                   <div className="flex items-center justify-between px-1">
                     <span className="text-sm font-black text-amber-950">
                       {formatDate(log.date)}
                     </span>
-                    <button
-                      onClick={() => handleDelete(log.id, log.photo_url)}
-                      className="p-1.5 text-stone-300 hover:text-rose-500 rounded-lg transition-colors"
-                      title="삭제하기"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleStartEdit(log)}
+                        className="p-1.5 text-stone-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                        title="수정하기"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeleteTarget({ id: log.id, photo_url: log.photo_url, date: log.date })}
+                        className="p-1.5 text-stone-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                        title="삭제하기"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
 
                   {/* 사진 */}
@@ -784,6 +896,48 @@ export default function Home() {
         )}
 
       </div>
+
+      {/* ========================================================= */}
+      {/* 4. 안전한 삭제 확인 모달 팝업 */}
+      {/* ========================================================= */}
+      {deleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl p-6 max-w-xs w-full text-center shadow-xl border border-amber-100 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="w-12 h-12 rounded-full bg-rose-50 text-rose-500 mx-auto flex items-center justify-center">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-base font-black text-amber-950">정말 삭제할까요?</h3>
+              <p className="text-xs text-stone-500 mt-1 leading-relaxed">
+                <span className="font-bold text-amber-900">{formatDate(deleteTarget.date)}</span>의<br />
+                기록과 사진이 영구적으로 지워져요 😢
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteTarget(null)}
+                className="py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-600 text-xs font-bold transition-all"
+              >
+                취소
+              </button>
+              
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleConfirmDelete}
+                className="py-2.5 rounded-xl bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold flex items-center justify-center gap-1 transition-all shadow-xs"
+              >
+                {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : '삭제하기'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </main>
   );
 }

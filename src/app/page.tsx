@@ -29,7 +29,7 @@ import {
   Trophy
 } from 'lucide-react';
 
-// 1. 한국 로컬 날짜(YYYY-MM-DD) 생성 헬퍼 (UTC 자정~오전 9시 밀림 해결)
+// 1. 한국 로컬 날짜(YYYY-MM-DD) 생성 헬퍼
 const getLocalDateString = (d: Date = new Date()) => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -37,11 +37,25 @@ const getLocalDateString = (d: Date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+// 2. YYYY-MM-DD 문자열을 시차 없는 로컬 자정 Date 객체로 변환 (UTC 시차 버그 방지)
+const parseLocalDate = (dateStr: string) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
+// 3. 날짜 포맷 헬퍼
+const formatDate = (dateStr: string) => {
+  const d = parseLocalDate(dateStr);
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 (${dayNames[d.getDay()]})`;
+};
+
 // 스토리지 파일 안전 삭제 헬퍼
 const deletePhotoFromStorage = async (photoUrl: string) => {
   try {
-    const pathParts = photoUrl.split('/');
-    const fileName = pathParts[pathParts.length - 1];
+    const urlWithoutQuery = photoUrl.split('?')[0];
+    const pathParts = urlWithoutQuery.split('/');
+    const fileName = decodeURIComponent(pathParts[pathParts.length - 1]);
     await supabase.storage.from('dog-photos').remove([fileName]);
   } catch (err) {
     console.error('스토리지 파일 삭제 실패:', err);
@@ -52,7 +66,7 @@ const deletePhotoFromStorage = async (photoUrl: string) => {
 interface CareChecks {
   bath: boolean;
   ear_clean: boolean;
-  play: boolean;
+  play: boolean; // 총캉총캉 (발톱 깎기)
   paw_clean: boolean;
   brush: boolean;
   heartworm: boolean;
@@ -82,37 +96,36 @@ interface DailyLog extends CareChecks {
   created_at: string;
 }
 
-// 7. 공통 월 이동 헤더 컴포넌트
+// 공통 월 이동 헤더 컴포넌트
 function MonthNavigator({
   currentDate,
   onChange,
   disabled = false,
-  labelPrefix = '',
+  customTitle,
 }: {
   currentDate: Date;
   onChange: (d: Date) => void;
   disabled?: boolean;
-  labelPrefix?: string;
+  customTitle?: string;
 }) {
   return (
     <div className="flex items-center justify-between">
       <button
         disabled={disabled}
         onClick={() => onChange(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
-        className="p-1.5 rounded-xl hover:bg-amber-50 text-amber-900 disabled:opacity-30 transition-all"
+        className="p-1.5 rounded-xl hover:bg-amber-50 text-amber-900 disabled:opacity-20 transition-all"
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
 
       <span className="text-sm font-black text-amber-950">
-        {labelPrefix ? `${labelPrefix} ` : ''}
-        {currentDate.getFullYear()}년 {currentDate.getMonth() + 1}월
+        {customTitle || `${currentDate.getFullYear()}년 ${currentDate.getMonth() + 1}월`}
       </span>
 
       <button
         disabled={disabled}
         onClick={() => onChange(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-        className="p-1.5 rounded-xl hover:bg-amber-50 text-amber-900 disabled:opacity-30 transition-all"
+        className="p-1.5 rounded-xl hover:bg-amber-50 text-amber-900 disabled:opacity-20 transition-all"
       >
         <ChevronRight className="w-4 h-4" />
       </button>
@@ -129,7 +142,7 @@ export default function Home() {
   const [feedViewMode, setFeedViewMode] = useState<'card' | 'grid'>('card');
   const [selectedPhotoLog, setSelectedPhotoLog] = useState<DailyLog | null>(null);
 
-  // 수정 상태 및 원본 사진 URL (스토리지 누수 방지용)
+  // 수정 상태 및 원본 사진 URL (스토리지 누수 방지)
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
@@ -138,19 +151,20 @@ export default function Home() {
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; photo_url: string | null; date: string } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // 날짜 필터 (기본 로컬 기준)
+  // 날짜 필터
   const [filterMonthDate, setFilterMonthDate] = useState(new Date());
   const [showAllMonths, setShowAllMonths] = useState(false);
   const [feedFilterTag, setFeedFilterTag] = useState<'all' | 'walk' | 'photo' | 'health'>('all');
 
-  // 3. 응가 기본값 0으로 정상화 & 로컬 기준 날짜
+  // 오늘 날짜 문자열
+  const todayStr = useMemo(() => getLocalDateString(), []);
+
+  // 입력 폼 상태
   const [date, setDate] = useState(getLocalDateString());
   const [walked, setWalked] = useState(false);
   const [poopCount, setPoopCount] = useState(0);
   const [memo, setMemo] = useState('');
   const [weight, setWeight] = useState('');
-
-  // 6. 체크박스 8종 객체 상태로 일원화
   const [checks, setChecks] = useState<CareChecks>(initialChecks);
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -159,7 +173,6 @@ export default function Home() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // 체크박스 토글 함수
   const toggleCheck = (key: keyof CareChecks) => {
     setChecks((prev) => ({ ...prev, [key]: !prev[key] }));
   };
@@ -186,21 +199,18 @@ export default function Home() {
     fetchLogs();
   }, []);
 
-  // 심장사상충 D-Day 계산
+  // 심장사상충 D-Day 계산 (로컬 기준 자정 계산으로 하루 오차 제거)
   const heartwormDDay = useMemo(() => {
     const hwLogs = logs.filter((l) => l.heartworm);
     if (hwLogs.length === 0) return null;
 
-    const lastDate = new Date(hwLogs[0].date);
+    const lastDate = parseLocalDate(hwLogs[0].date);
     const nextDate = new Date(lastDate);
     nextDate.setDate(nextDate.getDate() + 30);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    nextDate.setHours(0, 0, 0, 0);
-
+    const today = parseLocalDate(getLocalDateString());
     const diffTime = nextDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
     return { diffDays, lastDate: hwLogs[0].date };
   }, [logs]);
@@ -216,7 +226,6 @@ export default function Home() {
     setMemo(log.memo || '');
     setWeight(log.weight ? String(log.weight) : '');
     
-    // 체크 8종 한번에 복사
     setChecks({
       bath: Boolean(log.bath),
       ear_clean: Boolean(log.ear_clean),
@@ -228,14 +237,16 @@ export default function Home() {
       condition_bad: Boolean(log.condition_bad),
     });
 
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(null);
     setPreviewUrl(null);
     setActiveTab('write');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // 수정 취소 / 폼 리셋
+  // 수정 취소 및 폼 리셋
   const handleResetForm = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setEditingLogId(null);
     setOriginalPhotoUrl(null);
     setExistingPhotoUrl(null);
@@ -273,25 +284,27 @@ export default function Home() {
     }
   };
 
-  // 사진 선택
+  // 사진 선택 (메모리 해제 포함)
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
       setSelectedFile(file);
       setPreviewUrl(URL.createObjectURL(file));
       setExistingPhotoUrl(null);
     }
   };
 
-  // 사진 지우기
+  // 사진 제거
   const handleRemovePhoto = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(null);
     setPreviewUrl(null);
     setExistingPhotoUrl(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 2. 저장 시 기존 미사용 사진 스토리지 영구 삭제 처리
+  // 저장 (덮어쓰기 시 스토리지 고아 사진 누수 방지 완벽 처리)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -299,6 +312,10 @@ export default function Home() {
     try {
       setSubmitting(true);
       let finalPhotoUrl: string | null = existingPhotoUrl;
+
+      // 수정 모드가 아니더라도, 해당 날짜에 이미 저장된 일기가 있는지 탐색
+      const matchedLog = logs.find((l) => l.date === date);
+      const effectiveOriginalPhoto = originalPhotoUrl || (matchedLog ? matchedLog.photo_url : null);
 
       // 새 사진 업로드
       if (selectedFile) {
@@ -320,9 +337,9 @@ export default function Home() {
         finalPhotoUrl = publicUrlData.publicUrl;
       }
 
-      // [핵심] 기존 사진이 있었는데 새 사진으로 바뀌었거나 사진을 지웠다면, 스토리지에서 이전 파일 삭제
-      if (originalPhotoUrl && originalPhotoUrl !== finalPhotoUrl) {
-        await deletePhotoFromStorage(originalPhotoUrl);
+      // 이전 사진이 있었는데 새 사진으로 바뀌었거나 삭제된 경우 스토리지에서 이전 사진 파일 삭제
+      if (effectiveOriginalPhoto && effectiveOriginalPhoto !== finalPhotoUrl) {
+        await deletePhotoFromStorage(effectiveOriginalPhoto);
       }
 
       const payload = {
@@ -358,12 +375,6 @@ export default function Home() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-    return `${d.getMonth() + 1}월 ${d.getDate()}일 (${dayNames[d.getDay()]})`;
   };
 
   // 모아보기 필터링
@@ -408,14 +419,14 @@ export default function Home() {
       totalPoop: currentLogs.reduce((acc, cur) => acc + (cur.poop_count || 0), 0),
       bath: currentLogs.filter((l) => l.bath).length,
       earClean: currentLogs.filter((l) => l.ear_clean).length,
-      play: currentLogs.filter((l) => l.play).length,
+      play: currentLogs.filter((l) => l.play).length, // 발톱
       pawClean: currentLogs.filter((l) => l.paw_clean).length,
       brush: currentLogs.filter((l) => l.brush).length,
       latestWeight,
     };
   }, [logs, filterMonthDate]);
 
-  // 달력 날짜
+  // 달력 날짜 생성
   const calendarDays = useMemo(() => {
     const year = filterMonthDate.getFullYear();
     const month = filterMonthDate.getMonth();
@@ -537,7 +548,7 @@ export default function Home() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* 날짜 & 몸무게 */}
+              {/* 날짜 */}
               <div className="flex items-center justify-between pb-3 border-b border-amber-50">
                 <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
                   <CalendarIcon className="w-4 h-4 text-blue-600" /> 날짜
@@ -589,7 +600,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 치우는 오늘 케어 5종 */}
+              {/* 치우 미용실 케어 5종 */}
               <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-100/80 space-y-2">
                 <span className="text-xs font-bold text-amber-900 block">✨ 치우 미용실</span>
                 
@@ -615,7 +626,7 @@ export default function Home() {
 
                 <div className="grid grid-cols-2 gap-1.5">
                   {[
-                    { label: '총캉총캉 ⚡', key: 'play' as const },
+                    { label: '총캉총캉 ✂️', key: 'play' as const },
                     { label: '클린 발바닥 🐾', key: 'paw_clean' as const },
                   ].map(({ label, key }) => (
                     <button
@@ -645,6 +656,7 @@ export default function Home() {
                     <input
                       type="number"
                       step="0.05"
+                      min="0"
                       placeholder="몸무게"
                       value={weight}
                       onChange={(e) => setWeight(e.target.value)}
@@ -758,21 +770,20 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* 탭 2: 기록 모아보기 (전체보기 토글 & 사진만 필터 복원) */}
+        {/* 탭 2: 기록 모아보기 */}
         {/* ========================================================= */}
         {activeTab === 'feed' && (
           <section className="space-y-4">
             
             <div className="bg-white rounded-3xl p-3.5 border border-amber-100 shadow-xs space-y-2.5">
-              {/* 7. 공통 MonthNavigator 사용 */}
               <MonthNavigator
                 currentDate={filterMonthDate}
                 onChange={setFilterMonthDate}
                 disabled={showAllMonths}
-                labelPrefix={showAllMonths ? '(전체 기간)' : ''}
+                customTitle={showAllMonths ? '전체 기간 기록' : undefined}
               />
 
-              {/* 4. 퀵 필터 칩 & 전체보기 토글 & 뷰 전환 */}
+              {/* 퀵 필터 칩 & 전체보기 토글 & 뷰 전환 */}
               <div className="flex items-center justify-between pt-2 border-t border-amber-50">
                 <div className="flex gap-1 overflow-x-auto py-0.5 no-scrollbar">
                   <button
@@ -791,7 +802,6 @@ export default function Home() {
                   >
                     🐾 산책
                   </button>
-                  {/* 사진만 필터 칩 복구 */}
                   <button
                     onClick={() => setFeedFilterTag('photo')}
                     className={`px-2 py-1 rounded-xl text-[11px] font-bold transition-all shrink-0 ${
@@ -811,7 +821,6 @@ export default function Home() {
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0 ml-1">
-                  {/* 4. 전체 기간 토글 버튼 복구 */}
                   <button
                     onClick={() => setShowAllMonths(!showAllMonths)}
                     className={`text-[11px] font-bold px-2 py-1 rounded-xl border transition-all ${
@@ -823,7 +832,6 @@ export default function Home() {
                     {showAllMonths ? '월별' : '전체'}
                   </button>
 
-                  {/* 뷰 전환 */}
                   <div className="flex items-center gap-0.5 bg-stone-100 p-0.5 rounded-xl">
                     <button
                       onClick={() => setFeedViewMode('card')}
@@ -967,9 +975,8 @@ export default function Home() {
                       {log.ear_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">👂 귀 청소</span>}
                       {log.brush && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🪮 빗질</span>}
                       {log.bath && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🛁 목욕</span>}
-                      {log.play && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">⚡ 총캉총캉</span>}
-                      {log.paw_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🐾 클린  
-                        발바닥</span>}
+                      {log.play && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">✂️ 총캉총캉</span>}
+                      {log.paw_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🐾 클린발바닥</span>}
                     </div>
                   )}
 
@@ -990,7 +997,6 @@ export default function Home() {
         {activeTab === 'calendar' && (
           <section className="space-y-4">
             
-            {/* 7. 공통 MonthNavigator */}
             <div className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs">
               <MonthNavigator
                 currentDate={filterMonthDate}
@@ -1020,8 +1026,8 @@ export default function Home() {
                   { label: '귀 청소', count: monthlyStats.earClean, icon: '👂' },
                   { label: '빗질', count: monthlyStats.brush, icon: '🪮' },
                   { label: '목욕', count: monthlyStats.bath, icon: '🛁' },
-                  { label: '총캉총캉', count: monthlyStats.play, icon: '⚡' },
-                  { label: '클발', count: monthlyStats.pawClean, icon: '🐾' },
+                  { label: '총캉총캉', count: monthlyStats.play, icon: '✂️' },
+                  { label: '클린발', count: monthlyStats.pawClean, icon: '🐾' },
                 ].map((item) => (
                   <div key={item.label} className="bg-stone-50 p-2 rounded-xl text-center border border-stone-100">
                     <span className="text-xs block">{item.icon}</span>
@@ -1032,7 +1038,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 달력 그리드 */}
+            {/* 달력 그리드 (오늘 날짜 링 표시 및 터치 시 상세 모달 연동) */}
             <div className="bg-white rounded-3xl p-3.5 border border-amber-100 shadow-xs">
               <div className="grid grid-cols-7 gap-1 text-center mb-2">
                 {['일', '월', '화', '수', '목', '금', '토'].map((day, idx) => (
@@ -1051,19 +1057,33 @@ export default function Home() {
                 {calendarDays.map((item, idx) => {
                   if (!item) return <div key={`empty-${idx}`} className="aspect-square rounded-xl bg-transparent" />;
 
-                  const { dayNumber, log } = item;
+                  const { dayNumber, dateStr, log } = item;
+                  const isToday = dateStr === todayStr;
 
                   return (
                     <div
-                      key={item.dateStr}
-                      className="relative aspect-square rounded-xl overflow-hidden border border-stone-100 bg-stone-50/50 flex flex-col justify-between p-1"
+                      key={dateStr}
+                      onClick={() => log && setSelectedPhotoLog(log)}
+                      className={`relative aspect-square rounded-xl overflow-hidden border bg-stone-50/50 flex flex-col justify-between p-1 transition-all ${
+                        log ? 'cursor-pointer active:scale-95' : ''
+                      } ${
+                        isToday ? 'border-blue-500 ring-1 ring-blue-500' : 'border-stone-100'
+                      }`}
                     >
                       {log?.photo_url && (
                         <img src={log.photo_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
                       )}
                       {log?.photo_url && <div className="absolute inset-0 bg-black/20" />}
 
-                      <span className={`relative z-10 text-[10px] font-black leading-none ${log?.photo_url ? 'text-white drop-shadow-md' : 'text-stone-600'}`}>
+                      <span
+                        className={`relative z-10 text-[10px] font-black leading-none ${
+                          log?.photo_url
+                            ? 'text-white drop-shadow-md'
+                            : isToday
+                            ? 'text-blue-600'
+                            : 'text-stone-600'
+                        }`}
+                      >
                         {dayNumber}
                       </span>
 
@@ -1078,7 +1098,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 결산 리포트 카드 */}
+            {/* 결산 리포트 카드 (총캉총캉 행 완벽 제거) */}
             <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-3xl p-5 text-white shadow-md space-y-4">
               <div className="flex items-center justify-between border-b border-white/20 pb-3">
                 <div className="flex items-center gap-1.5">
@@ -1096,10 +1116,6 @@ export default function Home() {
                 <div className="flex justify-between items-center">
                   <span className="text-amber-100">황금빛 응가 배출</span>
                   <span className="font-black text-sm text-white">{monthlyStats.totalPoop}회 달성 💩</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-amber-100">신나는 총캉총캉</span>
-                  <span className="font-black text-sm text-white">{monthlyStats.play}회 발산 ⚡</span>
                 </div>
                 {monthlyStats.latestWeight && (
                   <div className="flex justify-between items-center pt-1 border-t border-white/15">
@@ -1119,7 +1135,7 @@ export default function Home() {
 
       </div>
 
-      {/* 갤러리 팝업 모달 */}
+      {/* 갤러리 및 달력 상세 팝업 모달 */}
       {selectedPhotoLog && (
         <div 
           onClick={() => setSelectedPhotoLog(null)}
@@ -1129,21 +1145,52 @@ export default function Home() {
             onClick={(e) => e.stopPropagation()}
             className="bg-white rounded-3xl overflow-hidden max-w-xs w-full shadow-2xl space-y-3 pb-4"
           >
-            <div className="relative aspect-square w-full bg-stone-100">
-              <img src={selectedPhotoLog.photo_url!} alt="" className="w-full h-full object-cover" />
-              <button 
-                onClick={() => setSelectedPhotoLog(null)}
-                className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+            {selectedPhotoLog.photo_url ? (
+              <div className="relative aspect-square w-full bg-stone-100">
+                <img src={selectedPhotoLog.photo_url} alt="" className="w-full h-full object-cover" />
+                <button 
+                  onClick={() => setSelectedPhotoLog(null)}
+                  className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 text-right">
+                <button 
+                  onClick={() => setSelectedPhotoLog(null)}
+                  className="p-1 text-stone-400 hover:text-stone-600 rounded-full"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
             
             <div className="px-4 space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-black text-amber-950">{formatDate(selectedPhotoLog.date)}</span>
-                {selectedPhotoLog.walked && <span className="text-xs font-bold text-blue-600">🐾 산책함</span>}
+                <div className="flex items-center gap-1">
+                  {selectedPhotoLog.walked && <span className="text-xs font-bold text-blue-600">🐾 산책함</span>}
+                  {selectedPhotoLog.weight && (
+                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
+                      {selectedPhotoLog.weight}kg
+                    </span>
+                  )}
+                </div>
               </div>
+
+              {/* 케어 요약 */}
+              <div className="flex flex-wrap gap-1 pt-1">
+                {selectedPhotoLog.bath && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">목욕</span>}
+                {selectedPhotoLog.ear_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">귀청소</span>}
+                {selectedPhotoLog.play && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">발톱</span>}
+                {selectedPhotoLog.paw_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">발바닥</span>}
+                {selectedPhotoLog.brush && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">빗질</span>}
+                {selectedPhotoLog.heartworm && <span className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] rounded font-bold">사상충</span>}
+                {selectedPhotoLog.hospital && <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[10px] rounded font-bold">병원</span>}
+                {selectedPhotoLog.condition_bad && <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[10px] rounded font-bold">컨디션↓</span>}
+              </div>
+
               {selectedPhotoLog.memo && (
                 <p className="text-xs text-stone-600 bg-stone-50 p-2.5 rounded-xl whitespace-pre-wrap">
                   {selectedPhotoLog.memo}

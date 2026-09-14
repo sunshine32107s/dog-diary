@@ -31,6 +31,9 @@ import {
   FileSpreadsheet
 } from 'lucide-react';
 
+// 치우 생일 상수
+const CHIU_BIRTHDAY = '2023-11-23';
+
 // 1. 한국 로컬 날짜(YYYY-MM-DD) 생성 헬퍼
 const getLocalDateString = (d: Date = new Date()) => {
   const year = d.getFullYear();
@@ -45,7 +48,37 @@ const parseLocalDate = (dateStr: string) => {
   return new Date(y, m - 1, d);
 };
 
-// 3. 날짜 포맷 헬퍼
+// 3. 치우 생일 기준 나이 계산 (년, 개월, 총 일수)
+const getChiuAge = (birthDateStr: string = CHIU_BIRTHDAY) => {
+  const birth = parseLocalDate(birthDateStr);
+  const today = parseLocalDate(getLocalDateString());
+
+  // 총 일수 계산 (태어난 날을 1일로 계산)
+  const diffTime = today.getTime() - birth.getTime();
+  const totalDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+  // 년 / 개월 계산
+  let years = today.getFullYear() - birth.getFullYear();
+  let months = today.getMonth() - birth.getMonth();
+  const days = today.getDate() - birth.getDate();
+
+  if (days < 0) {
+    months -= 1;
+  }
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+
+  return {
+    years,
+    months,
+    totalDays,
+    formatted: `${years}살 (${years}년 ${months}개월 · ${totalDays.toLocaleString()}일)`
+  };
+};
+
+// 4. 날짜 포맷 헬퍼
 const formatDate = (dateStr: string) => {
   const d = parseLocalDate(dateStr);
   const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
@@ -139,6 +172,9 @@ export default function Home() {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 치우 나이 상태 (클라이언트 마운트 후 안전 계산)
+  const [chiuAgeText, setChiuAgeText] = useState<string>('');
+
   // 탭 상태
   const [activeTab, setActiveTab] = useState<'write' | 'feed' | 'calendar'>('write');
   const [feedViewMode, setFeedViewMode] = useState<'card' | 'grid'>('card');
@@ -179,7 +215,7 @@ export default function Home() {
     setChecks((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // 데이터 불러오기
+  // 데이터 불러오기 및 나이 설정
   const fetchLogs = async () => {
     try {
       setLoading(true);
@@ -199,6 +235,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchLogs();
+    setChiuAgeText(getChiuAge().formatted);
   }, []);
 
   // 심장사상충 D-Day 계산
@@ -376,7 +413,7 @@ export default function Home() {
     }
   };
 
-  // 엑셀(CSV) 내보내기 기능 (UTF-8 BOM 적용으로 한글 깨짐 방지)
+  // 엑셀(CSV) 내보내기 기능
   const handleExportCSV = () => {
     if (logs.length === 0) {
       alert('내보낼 치우의 기록이 아직 없어요!');
@@ -512,7 +549,7 @@ export default function Home() {
 
       <div className="max-w-md mx-auto pt-5">
         
-        {/* 상단 헤더 & 사상충 D-Day */}
+        {/* 상단 헤더 & 치우 나이 & 사상충 D-Day */}
         <header className="mb-4 px-1">
           <div className="flex items-center justify-between">
             <div>
@@ -523,11 +560,19 @@ export default function Home() {
               <h1 className="text-2xl font-black text-amber-950 tracking-tight flex items-center gap-1.5">
                 치우의 하루하루 🐾
               </h1>
+
+              {/* 신규: 2023년 11월 23일생 기준 치우 나이 표시 */}
+              {chiuAgeText && (
+                <p className="text-[11px] font-bold text-amber-800/80 mt-0.5 flex items-center gap-1">
+                  <span>🎂</span>
+                  <span>{chiuAgeText}</span>
+                </p>
+              )}
             </div>
 
             {heartwormDDay && (
               <div 
-                className={`px-3 py-1.5 rounded-2xl border text-right transition-all ${
+                className={`px-3 py-1.5 rounded-2xl border text-right transition-all shrink-0 ml-2 ${
                   heartwormDDay.diffDays <= 0
                     ? 'bg-rose-50 border-rose-200 text-rose-700 animate-pulse'
                     : heartwormDDay.diffDays <= 3
@@ -1182,7 +1227,7 @@ export default function Home() {
               </p>
             </div>
 
-            {/* 신규: 엑셀(CSV) 전체 백업 카드 */}
+            {/* 엑셀(CSV) 전체 백업 카드 */}
             <div className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs space-y-2.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">

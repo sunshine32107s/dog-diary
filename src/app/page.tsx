@@ -265,11 +265,17 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#FCFAF6] text-[#3B342B] pb-24 px-4 font-gowun">
-      {/* 2. 구글 웹폰트 '고운돋움(Gowun Dodum)' 주입 */}
+{/* 커스텀 폰트(font.ttf) 적용 */}
       <style jsx global>{`
-        @import url('https://fonts.googleapis.com/css2?family=Gowun+Dodum&display=swap');
+        @font-face {
+          font-family: 'ChiuFont';
+          src: url('/font.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
+          font-display: swap;
+        }
         .font-gowun {
-          font-family: 'Gowun Dodum', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+          font-family: 'ChiuFont', -apple-system, BlinkMacSystemFont, sans-serif;
         }
       `}</style>
 

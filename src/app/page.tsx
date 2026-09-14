@@ -576,11 +576,11 @@ export default function Home() {
                   ))}
                 </div>
 
-                {/* 2행: 총캉총캉, 클린발바닥 */}
+                {/* 2행: 총캉총캉, 클린 발바닥 */}
                 <div className="grid grid-cols-2 gap-1.5">
                   {[
                     { label: '총캉총캉 ⚡', val: play, setVal: setPlay },
-                    { label: '클린발바닥 🐾', val: pawClean, setVal: setPawClean },
+                    { label: '클린 발바닥 🐾', val: pawClean, setVal: setPawClean },
                   ].map((item) => (
                     <button
                       key={item.label}
@@ -937,7 +937,7 @@ export default function Home() {
                       {log.brush && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🪮 빗질</span>}
                       {log.bath && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🛁 목욕</span>}
                       {log.play && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">⚡ 총캉총캉</span>}
-                      {log.paw_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🐾 클린발바닥</span>}
+                      {log.paw_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🐾 클린 발바닥</span>}
                     </div>
                   )}
 
@@ -980,7 +980,7 @@ export default function Home() {
             {/* 통계 요약 카드 */}
             <div className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs space-y-3">
               <h3 className="text-xs font-black text-blue-700 tracking-wider uppercase flex items-center gap-1">
-                <BarChart3 className="w-3.5 h-3.5" /> 이달의 수치 요약
+                <BarChart3 className="w-3.5 h-3.5" /> 이번 달에 치우는
               </h3>
 
               <div className="grid grid-cols-2 gap-2">

@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "댕댕 일기장 🐾",
-  description: "매일매일 기록하는 반려견 다이어리",
+  title: "치우의 하루💛",
+  description: "매일매일 기록하는 치우의 하루하루",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "댕댕일기",
+    title: "치우의 하루",
   },
 };
 

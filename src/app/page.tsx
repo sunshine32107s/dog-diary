@@ -1089,7 +1089,7 @@ export default function Home() {
               </div>
 
               <p className="text-[11px] text-amber-100 text-center font-bold">
-                "이번 달도 치우와 함께 건강하고 따뜻하게 보냈어요! 🌾💛"
+                "이번 달도 치우와 함께 씩씩하고 행복하게 보냈어요! 🐕💛"
               </p>
             </div>
 

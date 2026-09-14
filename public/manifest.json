@@ -1,7 +1,7 @@
 {
-  "name": "댕댕 일기장",
-  "short_name": "댕댕일기",
-  "description": "우리 강아지 산책 및 배변 일기장",
+  "name": "치우의 하루",
+  "short_name": "치우의 하루",
+  "description": "치우의 하루하루를 기록하는 곳",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#FAF7F2",

@@ -26,7 +26,9 @@ import {
   Pill,
   Stethoscope,
   Scale,
-  Trophy
+  Trophy,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 
 // 1. 한국 로컬 날짜(YYYY-MM-DD) 생성 헬퍼
@@ -37,7 +39,7 @@ const getLocalDateString = (d: Date = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
-// 2. YYYY-MM-DD 문자열을 시차 없는 로컬 자정 Date 객체로 변환 (UTC 시차 버그 방지)
+// 2. YYYY-MM-DD 문자열을 시차 없는 로컬 자정 Date 객체로 변환
 const parseLocalDate = (dateStr: string) => {
   const [y, m, d] = dateStr.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -199,7 +201,7 @@ export default function Home() {
     fetchLogs();
   }, []);
 
-  // 심장사상충 D-Day 계산 (로컬 기준 자정 계산으로 하루 오차 제거)
+  // 심장사상충 D-Day 계산
   const heartwormDDay = useMemo(() => {
     const hwLogs = logs.filter((l) => l.heartworm);
     if (hwLogs.length === 0) return null;
@@ -284,7 +286,7 @@ export default function Home() {
     }
   };
 
-  // 사진 선택 (메모리 해제 포함)
+  // 사진 선택
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -304,7 +306,7 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // 저장 (덮어쓰기 시 스토리지 고아 사진 누수 방지 완벽 처리)
+  // 저장 처리
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
@@ -313,11 +315,9 @@ export default function Home() {
       setSubmitting(true);
       let finalPhotoUrl: string | null = existingPhotoUrl;
 
-      // 수정 모드가 아니더라도, 해당 날짜에 이미 저장된 일기가 있는지 탐색
       const matchedLog = logs.find((l) => l.date === date);
       const effectiveOriginalPhoto = originalPhotoUrl || (matchedLog ? matchedLog.photo_url : null);
 
-      // 새 사진 업로드
       if (selectedFile) {
         const compressedFile = await imageCompression(selectedFile, {
           maxSizeMB: 0.8,
@@ -337,7 +337,6 @@ export default function Home() {
         finalPhotoUrl = publicUrlData.publicUrl;
       }
 
-      // 이전 사진이 있었는데 새 사진으로 바뀌었거나 삭제된 경우 스토리지에서 이전 사진 파일 삭제
       if (effectiveOriginalPhoto && effectiveOriginalPhoto !== finalPhotoUrl) {
         await deletePhotoFromStorage(effectiveOriginalPhoto);
       }
@@ -375,6 +374,59 @@ export default function Home() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  // 엑셀(CSV) 내보내기 기능 (UTF-8 BOM 적용으로 한글 깨짐 방지)
+  const handleExportCSV = () => {
+    if (logs.length === 0) {
+      alert('내보낼 치우의 기록이 아직 없어요!');
+      return;
+    }
+
+    const headers = [
+      '날짜',
+      '산책',
+      '황금응가(회)',
+      '몸무게(kg)',
+      '귀청소',
+      '빗질',
+      '목욕',
+      '발톱(총캉총캉)',
+      '클린발바닥',
+      '심장사상충',
+      '병원',
+      '컨디션저하',
+      '메모',
+      '사진링크'
+    ];
+
+    const rows = logs.map((log) => [
+      log.date,
+      log.walked ? 'O' : 'X',
+      log.poop_count ?? 0,
+      log.weight ?? '',
+      log.ear_clean ? 'O' : 'X',
+      log.brush ? 'O' : 'X',
+      log.bath ? 'O' : 'X',
+      log.play ? 'O' : 'X',
+      log.paw_clean ? 'O' : 'X',
+      log.heartworm ? 'O' : 'X',
+      log.hospital ? 'O' : 'X',
+      log.condition_bad ? 'O' : 'X',
+      `"${(log.memo || '').replace(/"/g, '""')}"`,
+      log.photo_url || ''
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `치우_하루하루_기록_${getLocalDateString()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // 모아보기 필터링
@@ -419,7 +471,7 @@ export default function Home() {
       totalPoop: currentLogs.reduce((acc, cur) => acc + (cur.poop_count || 0), 0),
       bath: currentLogs.filter((l) => l.bath).length,
       earClean: currentLogs.filter((l) => l.ear_clean).length,
-      play: currentLogs.filter((l) => l.play).length, // 발톱
+      play: currentLogs.filter((l) => l.play).length,
       pawClean: currentLogs.filter((l) => l.paw_clean).length,
       brush: currentLogs.filter((l) => l.brush).length,
       latestWeight,
@@ -992,7 +1044,7 @@ export default function Home() {
         )}
 
         {/* ========================================================= */}
-        {/* 탭 3: 달력 & 통계 */}
+        {/* 탭 3: 달력 & 통계 & 결산 리포트 & 엑셀 내보내기 */}
         {/* ========================================================= */}
         {activeTab === 'calendar' && (
           <section className="space-y-4">
@@ -1038,7 +1090,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 달력 그리드 (오늘 날짜 링 표시 및 터치 시 상세 모달 연동) */}
+            {/* 달력 그리드 */}
             <div className="bg-white rounded-3xl p-3.5 border border-amber-100 shadow-xs">
               <div className="grid grid-cols-7 gap-1 text-center mb-2">
                 {['일', '월', '화', '수', '목', '금', '토'].map((day, idx) => (
@@ -1098,7 +1150,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 결산 리포트 카드 (총캉총캉 행 완벽 제거) */}
+            {/* 결산 리포트 카드 */}
             <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-3xl p-5 text-white shadow-md space-y-4">
               <div className="flex items-center justify-between border-b border-white/20 pb-3">
                 <div className="flex items-center gap-1.5">
@@ -1128,6 +1180,27 @@ export default function Home() {
               <p className="text-[11px] text-amber-100 text-center font-bold">
                 "이번 달도 치우와 함께 씩씩하고 행복하게 보냈어요! 🐕💛"
               </p>
+            </div>
+
+            {/* 신규: 엑셀(CSV) 전체 백업 카드 */}
+            <div className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <h3 className="text-xs font-black text-amber-950">치우 기록 데이터 백업</h3>
+                </div>
+                <span className="text-[10px] font-bold text-stone-400">총 {logs.length}개의 기록</span>
+              </div>
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                지금까지 쓴 산책, 배변, 케어, 몸무게, 메모와 사진 링크를 엑셀 파일로 소장할 수 있어요.
+              </p>
+              <button
+                type="button"
+                onClick={handleExportCSV}
+                className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center justify-center gap-1.5 active:scale-98 transition-all shadow-xs"
+              >
+                <Download className="w-4 h-4" /> 엑셀(CSV)로 전체 기록 다운로드
+              </button>
             </div>
 
           </section>

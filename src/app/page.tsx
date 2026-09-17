@@ -28,7 +28,8 @@ import {
   Scale,
   Trophy,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Moon
 } from 'lucide-react';
 
 // 치우 생일 상수
@@ -48,23 +49,19 @@ const parseLocalDate = (dateStr: string) => {
   return new Date(y, m - 1, d);
 };
 
-// 3. 치우 생일 기준 나이 계산 (년, 개월, 총 일수)
+// 3. 치우 생일 기준 나이 계산
 const getChiuAge = (birthDateStr: string = CHIU_BIRTHDAY) => {
   const birth = parseLocalDate(birthDateStr);
   const today = parseLocalDate(getLocalDateString());
 
-  // 총 일수 계산 (태어난 날을 1일로 계산)
   const diffTime = today.getTime() - birth.getTime();
   const totalDays = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1;
 
-  // 년 / 개월 계산
   let years = today.getFullYear() - birth.getFullYear();
   let months = today.getMonth() - birth.getMonth();
   const days = today.getDate() - birth.getDate();
 
-  if (days < 0) {
-    months -= 1;
-  }
+  if (days < 0) months -= 1;
   if (months < 0) {
     years -= 1;
     months += 12;
@@ -124,6 +121,7 @@ interface DailyLog extends CareChecks {
   id: string;
   date: string;
   walked: boolean;
+  sleep_well: boolean; // 꿀잠 여부
   poop_count: number;
   photo_url: string | null;
   memo: string | null;
@@ -172,7 +170,6 @@ export default function Home() {
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 치우 나이 상태 (클라이언트 마운트 후 안전 계산)
   const [chiuAgeText, setChiuAgeText] = useState<string>('');
 
   // 탭 상태
@@ -180,7 +177,7 @@ export default function Home() {
   const [feedViewMode, setFeedViewMode] = useState<'card' | 'grid'>('card');
   const [selectedPhotoLog, setSelectedPhotoLog] = useState<DailyLog | null>(null);
 
-  // 수정 상태 및 원본 사진 URL (스토리지 누수 방지)
+  // 수정 상태 및 원본 사진 URL
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
   const [originalPhotoUrl, setOriginalPhotoUrl] = useState<string | null>(null);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState<string | null>(null);
@@ -194,11 +191,11 @@ export default function Home() {
   const [showAllMonths, setShowAllMonths] = useState(false);
   const [feedFilterTag, setFeedFilterTag] = useState<'all' | 'walk' | 'photo' | 'health'>('all');
 
-  // 오늘 날짜 문자열
   const todayStr = useMemo(() => getLocalDateString(), []);
 
-  // 입력 폼 상태
+  // 입력 폼 상태 (수면 기본값: true = 꿀잠)
   const [date, setDate] = useState(getLocalDateString());
+  const [sleepWell, setSleepWell] = useState(true);
   const [walked, setWalked] = useState(false);
   const [poopCount, setPoopCount] = useState(0);
   const [memo, setMemo] = useState('');
@@ -215,7 +212,7 @@ export default function Home() {
     setChecks((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // 데이터 불러오기 및 나이 설정
+  // 데이터 불러오기
   const fetchLogs = async () => {
     try {
       setLoading(true);
@@ -260,6 +257,7 @@ export default function Home() {
     setOriginalPhotoUrl(log.photo_url);
     setExistingPhotoUrl(log.photo_url);
     setDate(log.date);
+    setSleepWell(log.sleep_well ?? true);
     setWalked(log.walked);
     setPoopCount(log.poop_count);
     setMemo(log.memo || '');
@@ -292,6 +290,7 @@ export default function Home() {
     setSelectedFile(null);
     setPreviewUrl(null);
     setDate(getLocalDateString());
+    setSleepWell(true);
     setWalked(false);
     setPoopCount(0);
     setMemo('');
@@ -380,6 +379,7 @@ export default function Home() {
 
       const payload = {
         date,
+        sleep_well: sleepWell,
         walked,
         poop_count: poopCount,
         photo_url: finalPhotoUrl,
@@ -422,6 +422,7 @@ export default function Home() {
 
     const headers = [
       '날짜',
+      '수면(잘잤나요)',
       '산책',
       '황금응가(회)',
       '몸무게(kg)',
@@ -439,6 +440,7 @@ export default function Home() {
 
     const rows = logs.map((log) => [
       log.date,
+      (log.sleep_well ?? true) ? '꿀잠' : '뒤척임',
       log.walked ? 'O' : 'X',
       log.poop_count ?? 0,
       log.weight ?? '',
@@ -561,7 +563,6 @@ export default function Home() {
                 치우의 하루하루 🐾
               </h1>
 
-              {/* 신규: 2023년 11월 23일생 기준 치우 나이 표시 */}
               {chiuAgeText && (
                 <p className="text-[11px] font-bold text-amber-800/80 mt-0.5 flex items-center gap-1">
                   <span>🎂</span>
@@ -658,26 +659,46 @@ export default function Home() {
                 />
               </div>
 
-              {/* 산책 & 황금 응가 */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100 flex flex-col justify-between">
-                  <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
-                    <Footprints className="w-3.5 h-3.5 text-blue-600" /> 오늘 산책
-                  </span>
+              {/* 하루 3대 루틴 (수면 + 산책 + 슬림 응가) */}
+              <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100 space-y-2.5">
+                
+                {/* 1행: 수면 & 산책 2열 토글 */}
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSleepWell(!sleepWell)}
+                    className={`py-2 px-2.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1 shadow-2xs ${
+                      sleepWell
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-amber-100/90 text-amber-900 border border-amber-300'
+                    }`}
+                  >
+                    {sleepWell ? (
+                      <><span>🌙</span> 꿀잠 잤어요</>
+                    ) : (
+                      <><span>🌧️</span> 뒤척였어요</>
+                    )}
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => setWalked(!walked)}
-                    className={`mt-2 py-2 text-xs font-black rounded-xl transition-all ${
-                      walked ? 'bg-blue-600 text-white shadow-xs' : 'bg-stone-200/80 text-stone-500'
+                    className={`py-2 px-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1 shadow-2xs ${
+                      walked 
+                        ? 'bg-blue-600 text-white' 
+                        : 'bg-stone-200/80 text-stone-500'
                     }`}
                   >
-                    {walked ? '산책 완료 🐾' : '쉬었어요'}
+                    {walked ? '산책 완료 🐾' : '쉬었어요 💤'}
                   </button>
                 </div>
 
-                <div className="bg-amber-50/50 p-3 rounded-2xl border border-amber-100 flex flex-col justify-between">
-                  <span className="text-xs font-bold text-amber-900">💩 황금 응가</span>
-                  <div className="flex items-center justify-between mt-2">
+                {/* 2행: 슬림 응가 카운터 */}
+                <div className="flex items-center justify-between pt-1.5 border-t border-amber-100/60 px-1">
+                  <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
+                    💩 황금 응가
+                  </span>
+                  <div className="flex items-center gap-3">
                     <button
                       type="button"
                       onClick={() => setPoopCount(Math.max(0, poopCount - 1))}
@@ -685,7 +706,9 @@ export default function Home() {
                     >
                       <Minus className="w-3 h-3" />
                     </button>
-                    <span className="text-base font-black text-amber-950">{poopCount}회</span>
+                    <span className="text-sm font-black text-amber-950 w-5 text-center">
+                      {poopCount}회
+                    </span>
                     <button
                       type="button"
                       onClick={() => setPoopCount(poopCount + 1)}
@@ -695,6 +718,7 @@ export default function Home() {
                     </button>
                   </div>
                 </div>
+
               </div>
 
               {/* 치우 미용실 케어 5종 */}
@@ -1033,8 +1057,19 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 뱃지 */}
+                  {/* 뱃지 (수면 뱃지 포함) */}
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {/* 수면 뱃지 */}
+                    {(log.sleep_well ?? true) ? (
+                      <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
+                        🌙 꿀잠
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 text-xs font-bold border border-rose-200">
+                        🌧️ 뒤척임
+                      </span>
+                    )}
+
                     {log.walked ? (
                       <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200">
                         🐾 산책 완료
@@ -1288,6 +1323,13 @@ export default function Home() {
               <div className="flex items-center justify-between">
                 <span className="text-sm font-black text-amber-950">{formatDate(selectedPhotoLog.date)}</span>
                 <div className="flex items-center gap-1">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
+                    (selectedPhotoLog.sleep_well ?? true) 
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' 
+                      : 'bg-rose-50 text-rose-700 border border-rose-200'
+                  }`}>
+                    {(selectedPhotoLog.sleep_well ?? true) ? '🌙 꿀잠' : '🌧️ 뒤척임'}
+                  </span>
                   {selectedPhotoLog.walked && <span className="text-xs font-bold text-blue-600">🐾 산책함</span>}
                   {selectedPhotoLog.weight && (
                     <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">

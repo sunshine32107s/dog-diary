@@ -28,8 +28,7 @@ import {
   Scale,
   Trophy,
   Download,
-  FileSpreadsheet,
-  Moon
+  FileSpreadsheet
 } from 'lucide-react';
 
 // 치우 생일 상수
@@ -94,12 +93,13 @@ const deletePhotoFromStorage = async (photoUrl: string) => {
   }
 };
 
-// 체크박스 8종 인터페이스
+// 체크박스 9종 인터페이스 (매끈 발 추가)
 interface CareChecks {
   bath: boolean;
   ear_clean: boolean;
   play: boolean; // 총캉총캉 (발톱 깎기)
-  paw_clean: boolean;
+  paw_clean: boolean; // 클린 발
+  paw_moist: boolean; // 매끈 발 (발바닥 로션)
   brush: boolean;
   heartworm: boolean;
   hospital: boolean;
@@ -111,6 +111,7 @@ const initialChecks: CareChecks = {
   ear_clean: false,
   play: false,
   paw_clean: false,
+  paw_moist: false,
   brush: false,
   heartworm: false,
   hospital: false,
@@ -121,7 +122,7 @@ interface DailyLog extends CareChecks {
   id: string;
   date: string;
   walked: boolean;
-  sleep_well: boolean; // 꿀잠 여부
+  sleep_well: boolean;
   poop_count: number;
   photo_url: string | null;
   memo: string | null;
@@ -193,7 +194,7 @@ export default function Home() {
 
   const todayStr = useMemo(() => getLocalDateString(), []);
 
-  // 입력 폼 상태 (수면 기본값: true = 꿀잠)
+  // 입력 폼 상태
   const [date, setDate] = useState(getLocalDateString());
   const [sleepWell, setSleepWell] = useState(true);
   const [walked, setWalked] = useState(false);
@@ -268,6 +269,7 @@ export default function Home() {
       ear_clean: Boolean(log.ear_clean),
       play: Boolean(log.play),
       paw_clean: Boolean(log.paw_clean),
+      paw_moist: Boolean(log.paw_moist),
       brush: Boolean(log.brush),
       heartworm: Boolean(log.heartworm),
       hospital: Boolean(log.hospital),
@@ -430,7 +432,8 @@ export default function Home() {
       '빗질',
       '목욕',
       '발톱(총캉총캉)',
-      '클린발바닥',
+      '클린발',
+      '매끈발',
       '심장사상충',
       '병원',
       '컨디션저하',
@@ -449,6 +452,7 @@ export default function Home() {
       log.bath ? 'O' : 'X',
       log.play ? 'O' : 'X',
       log.paw_clean ? 'O' : 'X',
+      log.paw_moist ? 'O' : 'X',
       log.heartworm ? 'O' : 'X',
       log.hospital ? 'O' : 'X',
       log.condition_bad ? 'O' : 'X',
@@ -512,6 +516,7 @@ export default function Home() {
       earClean: currentLogs.filter((l) => l.ear_clean).length,
       play: currentLogs.filter((l) => l.play).length,
       pawClean: currentLogs.filter((l) => l.paw_clean).length,
+      pawMoist: currentLogs.filter((l) => l.paw_moist).length,
       brush: currentLogs.filter((l) => l.brush).length,
       latestWeight,
     };
@@ -721,7 +726,7 @@ export default function Home() {
 
               </div>
 
-              {/* 치우 미용실 케어 5종 */}
+              {/* 치우 미용실 케어 6종 (3개 x 2줄 완벽 대칭 구조) */}
               <div className="bg-amber-50/40 p-3.5 rounded-2xl border border-amber-100/80 space-y-2">
                 <span className="text-xs font-bold text-amber-900 block">✨ 치우 미용실</span>
                 
@@ -730,31 +735,15 @@ export default function Home() {
                     { label: '귀 청소 👂', key: 'ear_clean' as const },
                     { label: '빗질 🪮', key: 'brush' as const },
                     { label: '목욕 🛁', key: 'bath' as const },
+                    { label: '총캉총캉 ✂️', key: 'play' as const },
+                    { label: '클린 발 🐾', key: 'paw_clean' as const },
+                    { label: '매끈 발 🧴', key: 'paw_moist' as const },
                   ].map(({ label, key }) => (
                     <button
                       key={key}
                       type="button"
                       onClick={() => toggleCheck(key)}
                       className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-0.5 transition-all ${
-                        checks[key] ? 'bg-amber-500 text-white shadow-xs' : 'bg-white border border-amber-200/70 text-amber-900'
-                      }`}
-                    >
-                      {checks[key] && <Check className="w-3 h-3 stroke-[3]" />}
-                      {label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="grid grid-cols-2 gap-1.5">
-                  {[
-                    { label: '총캉총캉 ✂️', key: 'play' as const },
-                    { label: '클린 발바닥 🐾', key: 'paw_clean' as const },
-                  ].map(({ label, key }) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => toggleCheck(key)}
-                      className={`py-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1 transition-all ${
                         checks[key] ? 'bg-amber-500 text-white shadow-xs' : 'bg-white border border-amber-200/70 text-amber-900'
                       }`}
                     >
@@ -1057,9 +1046,8 @@ export default function Home() {
                     </div>
                   )}
 
-                  {/* 뱃지 (수면 뱃지 포함) */}
+                  {/* 뱃지 라인 */}
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {/* 수면 뱃지 */}
                     {(log.sleep_well ?? true) ? (
                       <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold border border-indigo-100">
                         🌙 꿀잠
@@ -1101,14 +1089,15 @@ export default function Home() {
                     )}
                   </div>
 
-                  {/* 케어 체크 뱃지 */}
-                  {(log.bath || log.ear_clean || log.play || log.paw_clean || log.brush) && (
+                  {/* 미용실 케어 뱃지 (명칭 통일: 클린 발, 매끈 발) */}
+                  {(log.bath || log.ear_clean || log.play || log.paw_clean || log.paw_moist || log.brush) && (
                     <div className="flex flex-wrap gap-1 pt-0.5 border-t border-amber-50">
                       {log.ear_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">👂 귀 청소</span>}
                       {log.brush && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🪮 빗질</span>}
                       {log.bath && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🛁 목욕</span>}
                       {log.play && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">✂️ 총캉총캉</span>}
-                      {log.paw_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🐾 클린발바닥</span>}
+                      {log.paw_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🐾 클린 발</span>}
+                      {log.paw_moist && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">🧴 매끈 발</span>}
                     </div>
                   )}
 
@@ -1136,7 +1125,7 @@ export default function Home() {
               />
             </div>
 
-            {/* 통계 요약 */}
+            {/* 통계 요약 (3개씩 2줄 완벽 개편) */}
             <div className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs space-y-3">
               <h3 className="text-xs font-black text-blue-700 tracking-wider uppercase flex items-center gap-1">
                 <BarChart3 className="w-3.5 h-3.5" /> 이번 달 치우는
@@ -1153,17 +1142,19 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-5 gap-1 pt-1">
+              {/* 3열 2행 구조로 널찍하고 반듯하게 정돈된 통계 칸 */}
+              <div className="grid grid-cols-3 gap-1.5 pt-1">
                 {[
                   { label: '귀 청소', count: monthlyStats.earClean, icon: '👂' },
                   { label: '빗질', count: monthlyStats.brush, icon: '🪮' },
                   { label: '목욕', count: monthlyStats.bath, icon: '🛁' },
                   { label: '총캉총캉', count: monthlyStats.play, icon: '✂️' },
-                  { label: '클린발', count: monthlyStats.pawClean, icon: '🐾' },
+                  { label: '클린 발', count: monthlyStats.pawClean, icon: '🐾' },
+                  { label: '매끈 발', count: monthlyStats.pawMoist, icon: '🧴' },
                 ].map((item) => (
-                  <div key={item.label} className="bg-stone-50 p-2 rounded-xl text-center border border-stone-100">
-                    <span className="text-xs block">{item.icon}</span>
-                    <span className="text-[10px] text-stone-500 font-bold block mt-0.5">{item.label}</span>
+                  <div key={item.label} className="bg-stone-50 p-2.5 rounded-2xl text-center border border-stone-100 flex flex-col justify-between">
+                    <span className="text-sm block">{item.icon}</span>
+                    <span className="text-[11px] text-stone-500 font-bold block mt-1">{item.label}</span>
                     <span className="text-xs font-black text-amber-950 mt-0.5 block">{item.count}회</span>
                   </div>
                 ))}
@@ -1344,7 +1335,8 @@ export default function Home() {
                 {selectedPhotoLog.bath && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">목욕</span>}
                 {selectedPhotoLog.ear_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">귀청소</span>}
                 {selectedPhotoLog.play && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">발톱</span>}
-                {selectedPhotoLog.paw_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">발바닥</span>}
+                {selectedPhotoLog.paw_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">클린발</span>}
+                {selectedPhotoLog.paw_moist && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">매끈발</span>}
                 {selectedPhotoLog.brush && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">빗질</span>}
                 {selectedPhotoLog.heartworm && <span className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] rounded font-bold">사상충</span>}
                 {selectedPhotoLog.hospital && <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[10px] rounded font-bold">병원</span>}

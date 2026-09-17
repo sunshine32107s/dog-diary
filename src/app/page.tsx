@@ -93,13 +93,13 @@ const deletePhotoFromStorage = async (photoUrl: string) => {
   }
 };
 
-// 체크박스 9종 인터페이스 (매끈 발 추가)
+// 체크박스 9종 인터페이스
 interface CareChecks {
   bath: boolean;
   ear_clean: boolean;
-  play: boolean; // 총캉총캉 (발톱 깎기)
-  paw_clean: boolean; // 클린 발
-  paw_moist: boolean; // 매끈 발 (발바닥 로션)
+  play: boolean;
+  paw_clean: boolean;
+  paw_moist: boolean;
   brush: boolean;
   heartworm: boolean;
   hospital: boolean;
@@ -498,7 +498,7 @@ export default function Home() {
     return filteredLogs.filter((log) => Boolean(log.photo_url));
   }, [filteredLogs]);
 
-  // 통계 계산
+  // 통계 계산 (수면 통계 포함)
   const monthlyStats = useMemo(() => {
     const year = filterMonthDate.getFullYear();
     const month = filterMonthDate.getMonth() + 1;
@@ -508,10 +508,15 @@ export default function Home() {
     const logsWithWeight = currentLogs.filter((l) => l.weight && l.weight > 0);
     const latestWeight = logsWithWeight.length > 0 ? logsWithWeight[0].weight : null;
 
+    const sleepWellCount = currentLogs.filter((l) => (l.sleep_well ?? true)).length;
+    const tossTurnCount = currentLogs.filter((l) => l.sleep_well === false).length;
+
     return {
       totalDays: currentLogs.length,
       walkCount: currentLogs.filter((l) => l.walked).length,
       totalPoop: currentLogs.reduce((acc, cur) => acc + (cur.poop_count || 0), 0),
+      sleepWellCount,
+      tossTurnCount,
       bath: currentLogs.filter((l) => l.bath).length,
       earClean: currentLogs.filter((l) => l.ear_clean).length,
       play: currentLogs.filter((l) => l.play).length,
@@ -1073,23 +1078,23 @@ export default function Home() {
                     </span>
 
                     {log.heartworm && (
-                      <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-blue-600 text-white text-[11px] font-bold">
+                      <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full bg-blue-600 text-white text-[11px] font-bold">
                         💊 사상충
                       </span>
                     )}
                     {log.hospital && (
-                      <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold">
+                      <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-bold">
                         🏥 병원
                       </span>
                     )}
                     {log.condition_bad && (
-                      <span className="inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-rose-500 text-white text-[11px] font-bold">
+                      <span className="inline-flex items-center gap-0.5 px-2.5 py-1 rounded-full bg-rose-500 text-white text-[11px] font-bold">
                         🚨 컨디션↓
                       </span>
                     )}
                   </div>
 
-                  {/* 미용실 케어 뱃지 (명칭 통일: 클린 발, 매끈 발) */}
+                  {/* 미용실 케어 뱃지 */}
                   {(log.bath || log.ear_clean || log.play || log.paw_clean || log.paw_moist || log.brush) && (
                     <div className="flex flex-wrap gap-1 pt-0.5 border-t border-amber-50">
                       {log.ear_clean && <span className="px-2 py-0.5 rounded-lg bg-amber-50 text-amber-800 text-[11px] font-bold border border-amber-200/60">👂 귀 청소</span>}
@@ -1125,7 +1130,7 @@ export default function Home() {
               />
             </div>
 
-            {/* 통계 요약 (3개씩 2줄 완벽 개편) */}
+            {/* 통계 요약 */}
             <div className="bg-white rounded-3xl p-4 border border-amber-100 shadow-xs space-y-3">
               <h3 className="text-xs font-black text-blue-700 tracking-wider uppercase flex items-center gap-1">
                 <BarChart3 className="w-3.5 h-3.5" /> 이번 달 치우는
@@ -1142,7 +1147,7 @@ export default function Home() {
                 </div>
               </div>
 
-              {/* 3열 2행 구조로 널찍하고 반듯하게 정돈된 통계 칸 */}
+              {/* 3열 2행 슬림형 1줄 카드 구조 */}
               <div className="grid grid-cols-3 gap-1.5 pt-1">
                 {[
                   { label: '귀 청소', count: monthlyStats.earClean, icon: '👂' },
@@ -1152,10 +1157,15 @@ export default function Home() {
                   { label: '클린 발', count: monthlyStats.pawClean, icon: '🐾' },
                   { label: '매끈 발', count: monthlyStats.pawMoist, icon: '🧴' },
                 ].map((item) => (
-                  <div key={item.label} className="bg-stone-50 p-2.5 rounded-2xl text-center border border-stone-100 flex flex-col justify-between">
-                    <span className="text-sm block">{item.icon}</span>
-                    <span className="text-[11px] text-stone-500 font-bold block mt-1">{item.label}</span>
-                    <span className="text-xs font-black text-amber-950 mt-0.5 block">{item.count}회</span>
+                  <div 
+                    key={item.label} 
+                    className="bg-stone-50/90 py-1.5 px-2 rounded-xl border border-stone-100/90 flex items-center justify-between"
+                  >
+                    <span className="text-[11px] font-bold text-stone-600 flex items-center gap-0.5">
+                      <span className="text-xs">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </span>
+                    <span className="text-xs font-black text-amber-950">{item.count}회</span>
                   </div>
                 ))}
               </div>
@@ -1221,7 +1231,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* 결산 리포트 카드 */}
+            {/* 결산 리포트 카드 (새근새근 꿈나라 여행 적용) */}
             <div className="bg-gradient-to-br from-amber-500 to-amber-600 rounded-3xl p-5 text-white shadow-md space-y-4">
               <div className="flex items-center justify-between border-b border-white/20 pb-3">
                 <div className="flex items-center gap-1.5">
@@ -1232,14 +1242,32 @@ export default function Home() {
               </div>
 
               <div className="bg-white/10 backdrop-blur-xs rounded-2xl p-3.5 space-y-2 text-xs">
+                {/* 1. 새근새근 꿈나라 여행 (수면 2안 적용) */}
+                <div className="flex justify-between items-center">
+                  <span className="text-amber-100">새근새근 꿈나라 여행</span>
+                  <span className="font-black text-sm text-white">
+                    {monthlyStats.sleepWellCount}일 완주 🌙
+                    {monthlyStats.tossTurnCount > 0 && (
+                      <span className="text-[11px] font-normal text-amber-200 ml-1">
+                        (뒤척임 {monthlyStats.tossTurnCount}일)
+                      </span>
+                    )}
+                  </span>
+                </div>
+
+                {/* 2. 산책길 */}
                 <div className="flex justify-between items-center">
                   <span className="text-amber-100">함께 걸은 산책길</span>
                   <span className="font-black text-sm text-white">{monthlyStats.walkCount}일 완주 🐾</span>
                 </div>
+
+                {/* 3. 황금 응가 */}
                 <div className="flex justify-between items-center">
                   <span className="text-amber-100">황금빛 응가 배출</span>
                   <span className="font-black text-sm text-white">{monthlyStats.totalPoop}회 달성 💩</span>
                 </div>
+
+                {/* 4. 최근 몸무게 */}
                 {monthlyStats.latestWeight && (
                   <div className="flex justify-between items-center pt-1 border-t border-white/15">
                     <span className="text-amber-100">최근 측정한 몸무게</span>

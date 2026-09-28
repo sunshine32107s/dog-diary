@@ -7,7 +7,6 @@ import {
   Camera, 
   Plus, 
   Minus, 
-  Footprints, 
   Sparkles, 
   Calendar as CalendarIcon, 
   Loader2, 
@@ -145,6 +144,7 @@ function MonthNavigator({
   return (
     <div className="flex items-center justify-between">
       <button
+        aria-label="이전 달"
         disabled={disabled}
         onClick={() => onChange(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
         className="p-1.5 rounded-xl hover:bg-amber-50 text-amber-900 disabled:opacity-20 transition-all"
@@ -157,6 +157,7 @@ function MonthNavigator({
       </span>
 
       <button
+        aria-label="다음 달"
         disabled={disabled}
         onClick={() => onChange(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
         className="p-1.5 rounded-xl hover:bg-amber-50 text-amber-900 disabled:opacity-20 transition-all"
@@ -316,8 +317,9 @@ export default function Home() {
 
       setLogs((prev) => prev.filter((item) => item.id !== deleteTarget.id));
       if (editingLogId === deleteTarget.id) handleResetForm();
-    } catch (err: any) {
-      alert(`삭제 중 오류: ${err.message}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.';
+      alert(`삭제 중 오류: ${message}`);
     } finally {
       setIsDeleting(false);
       setDeleteTarget(null);
@@ -349,12 +351,19 @@ export default function Home() {
     e.preventDefault();
     if (submitting) return;
 
+    const matchedLog = logs.find((log) => log.date === date);
+    if (matchedLog && matchedLog.id !== editingLogId) {
+      alert('이미 기록이 있는 날짜예요. 모아보기에서 해당 기록을 수정해주세요.');
+      return;
+    }
+
+    let uploadedPhotoUrl: string | null = null;
+    let databaseSaved = false;
+
     try {
       setSubmitting(true);
-      let finalPhotoUrl: string | null = existingPhotoUrl;
-
-      const matchedLog = logs.find((l) => l.date === date);
-      const effectiveOriginalPhoto = originalPhotoUrl || (matchedLog ? matchedLog.photo_url : null);
+      let finalPhotoUrl: string | null = existingPhotoUrl ?? matchedLog?.photo_url ?? null;
+      const effectiveOriginalPhoto = originalPhotoUrl ?? matchedLog?.photo_url ?? null;
 
       if (selectedFile) {
         const compressedFile = await imageCompression(selectedFile, {
@@ -373,10 +382,7 @@ export default function Home() {
 
         const { data: publicUrlData } = supabase.storage.from('dog-photos').getPublicUrl(fileName);
         finalPhotoUrl = publicUrlData.publicUrl;
-      }
-
-      if (effectiveOriginalPhoto && effectiveOriginalPhoto !== finalPhotoUrl) {
-        await deletePhotoFromStorage(effectiveOriginalPhoto);
+        uploadedPhotoUrl = finalPhotoUrl;
       }
 
       const payload = {
@@ -405,11 +411,22 @@ export default function Home() {
         if (insertError) throw insertError;
       }
 
+      databaseSaved = true;
+
+      if (effectiveOriginalPhoto && effectiveOriginalPhoto !== finalPhotoUrl) {
+        await deletePhotoFromStorage(effectiveOriginalPhoto);
+      }
+
       handleResetForm();
       await fetchLogs();
       setActiveTab('feed');
-    } catch (err: any) {
-      alert(`저장 중 오류: ${err.message}`);
+    } catch (err: unknown) {
+      if (uploadedPhotoUrl && !databaseSaved) {
+        await deletePhotoFromStorage(uploadedPhotoUrl);
+      }
+
+      const message = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.';
+      alert(`저장 중 오류: ${message}`);
     } finally {
       setSubmitting(false);
     }
@@ -710,6 +727,7 @@ export default function Home() {
                   </span>
                   <div className="flex items-center gap-3">
                     <button
+                      aria-label="응가 횟수 줄이기"
                       type="button"
                       onClick={() => setPoopCount(Math.max(0, poopCount - 1))}
                       className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-amber-200 text-amber-900 active:scale-90"
@@ -720,6 +738,7 @@ export default function Home() {
                       {poopCount}회
                     </span>
                     <button
+                      aria-label="응가 횟수 늘리기"
                       type="button"
                       onClick={() => setPoopCount(poopCount + 1)}
                       className="w-7 h-7 flex items-center justify-center rounded-lg bg-amber-500 text-white active:scale-90"
@@ -1026,12 +1045,14 @@ export default function Home() {
                     </div>
                     <div className="flex items-center gap-1">
                       <button
+                        aria-label={`${formatDate(log.date)} 기록 수정`}
                         onClick={() => handleStartEdit(log)}
                         className="p-1.5 text-stone-400 hover:text-blue-600 rounded-lg transition-colors"
                       >
                         <Pencil className="w-4 h-4" />
                       </button>
                       <button
+                        aria-label={`${formatDate(log.date)} 기록 삭제`}
                         onClick={() => setDeleteTarget({ id: log.id, photo_url: log.photo_url, date: log.date })}
                         className="p-1.5 text-stone-400 hover:text-rose-500 rounded-lg transition-colors"
                       >
@@ -1321,6 +1342,7 @@ export default function Home() {
               <div className="relative aspect-square w-full bg-stone-100">
                 <img src={selectedPhotoLog.photo_url} alt="" className="w-full h-full object-cover" />
                 <button 
+                  aria-label="상세 기록 닫기"
                   onClick={() => setSelectedPhotoLog(null)}
                   className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full"
                 >
@@ -1330,6 +1352,7 @@ export default function Home() {
             ) : (
               <div className="p-3 text-right">
                 <button 
+                  aria-label="상세 기록 닫기"
                   onClick={() => setSelectedPhotoLog(null)}
                   className="p-1 text-stone-400 hover:text-stone-600 rounded-full"
                 >

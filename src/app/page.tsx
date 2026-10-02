@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import { chronologicalLogs, monthLogs } from '@/lib/diary-album';
 import { supabase } from '@/lib/supabase';
+import OwnerAccess, { useOwnerAccess } from '@/components/OwnerAccess';
 import imageCompression from 'browser-image-compression';
 import { 
   Camera, 
@@ -36,6 +37,7 @@ import {
 
 const DiaryViewer = dynamic(() => import('@/components/DiaryViewer'), { ssr: false });
 const AlbumExport = dynamic(() => import('@/components/AlbumExport'), { ssr: false });
+const DiaryBackup = dynamic(() => import('@/components/DiaryBackup'), { ssr: false });
 
 // 치우 생일 상수
 const CHIU_BIRTHDAY = '2023-11-23';
@@ -95,7 +97,8 @@ const deletePhotoFromStorage = async (photoUrl: string) => {
     const urlWithoutQuery = photoUrl.split('?')[0];
     const pathParts = urlWithoutQuery.split('/');
     const fileName = decodeURIComponent(pathParts[pathParts.length - 1]);
-    await supabase.storage.from('dog-photos').remove([fileName]);
+    const { error } = await supabase.storage.from('dog-photos').remove([fileName]);
+    if (error) throw error;
   } catch (err) {
     console.error('스토리지 파일 삭제 실패:', err);
   }
@@ -178,6 +181,8 @@ function MonthNavigator({
 }
 
 export default function Home() {
+  const access = useOwnerAccess();
+  const [backupOpen, setBackupOpen] = useState(false);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -269,6 +274,7 @@ export default function Home() {
 
   // 수정 모드 진입
   const handleStartEdit = (log: DailyLog) => {
+    if (!access.owner) return;
     setEditingLogId(log.id);
     setOriginalPhotoUrl(log.photo_url);
     setExistingPhotoUrl(log.photo_url);
@@ -318,11 +324,11 @@ export default function Home() {
 
   // 삭제 확정
   const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || !access.owner || isDeleting) return;
 
     try {
       setIsDeleting(true);
-      const { error } = await supabase.from('daily_logs').delete().eq('id', deleteTarget.id);
+      const { error } = await supabase.from('daily_logs').delete().eq('id', deleteTarget.id).select('id').single();
       if (error) throw error;
 
       if (deleteTarget.photo_url) {
@@ -363,7 +369,7 @@ export default function Home() {
   // 저장 처리
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitting) return;
+    if (submitting || !access.owner) return;
 
     const matchedLog = logs.find((log) => log.date === date);
     if (matchedLog && matchedLog.id !== editingLogId) {
@@ -376,8 +382,9 @@ export default function Home() {
 
     try {
       setSubmitting(true);
-      let finalPhotoUrl: string | null = existingPhotoUrl ?? matchedLog?.photo_url ?? null;
-      const effectiveOriginalPhoto = originalPhotoUrl ?? matchedLog?.photo_url ?? null;
+      // null is an intentional removal, not a reason to restore the old photo.
+      let finalPhotoUrl: string | null = existingPhotoUrl;
+      const effectiveOriginalPhoto = originalPhotoUrl;
 
       if (selectedFile) {
         const compressedFile = await imageCompression(selectedFile, {
@@ -414,14 +421,15 @@ export default function Home() {
         const { error: updateError } = await supabase
           .from('daily_logs')
           .update(payload)
-          .eq('id', editingLogId);
+          .eq('id', editingLogId).select('id').single();
 
         if (updateError) throw updateError;
       } else {
         const { error: insertError } = await supabase
           .from('daily_logs')
-          .upsert(payload, { onConflict: 'date' });
+          .insert(payload).select('id').single();
 
+        if (insertError?.code === '23505') throw new Error('이미 기록이 있는 날짜예요. 기존 기록을 수정해주세요.');
         if (insertError) throw insertError;
       }
 
@@ -604,6 +612,7 @@ export default function Home() {
         
         {/* 상단 헤더 & 치우 나이 & 사상충 D-Day */}
         <header className="mb-4 px-1">
+          <OwnerAccess {...access} />
           <div className="flex items-center justify-between">
             <div>
               <div className="flex items-center gap-1 text-blue-600 mb-0.5">
@@ -697,6 +706,8 @@ export default function Home() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {!access.owner && <p className="text-xs text-amber-800" role="status">{access.checking ? '로그인 상태를 확인하고 있어요.' : '기록 작성·수정은 상단의 소유자 로그인 후 이용할 수 있어요.'}</p>}
+              <fieldset disabled={!access.owner || submitting} className="space-y-4 min-w-0">
               {/* 날짜 */}
               <div className="flex items-center justify-between pb-3 border-b border-amber-50">
                 <span className="text-xs font-bold text-amber-900 flex items-center gap-1">
@@ -923,6 +934,7 @@ export default function Home() {
                   '치우의 하루 저장하기 🐾'
                 )}
               </button>
+              </fieldset>
             </form>
           </section>
         )}
@@ -1079,6 +1091,7 @@ export default function Home() {
                       <button aria-label={`${formatDate(log.date)} 기록 보기·저장`} onClick={() => openViewer(log, filteredLogs)} className="p-1.5 text-blue-600 rounded-lg"><Download className="w-4 h-4" /></button>
                       <button
                         aria-label={`${formatDate(log.date)} 기록 수정`}
+                        disabled={!access.owner}
                         onClick={() => handleStartEdit(log)}
                         className="p-1.5 text-stone-400 hover:text-blue-600 rounded-lg transition-colors"
                       >
@@ -1086,6 +1099,7 @@ export default function Home() {
                       </button>
                       <button
                         aria-label={`${formatDate(log.date)} 기록 삭제`}
+                        disabled={!access.owner}
                         onClick={() => setDeleteTarget({ id: log.id, photo_url: log.photo_url, date: log.date })}
                         className="p-1.5 text-stone-400 hover:text-rose-500 rounded-lg transition-colors"
                       >
@@ -1354,6 +1368,7 @@ export default function Home() {
               >
                 <Download className="w-4 h-4" /> 엑셀(CSV)로 전체 기록 다운로드
               </button>
+              <button type="button" disabled={loading || !logs.length} onClick={() => setBackupOpen(true)} className="w-full py-3 rounded-2xl border border-emerald-200 text-emerald-700 font-black text-xs disabled:opacity-50">사진 파일까지 ZIP으로 백업</button>
             </div>
 
           </section>
@@ -1363,6 +1378,7 @@ export default function Home() {
 
       {albumViewer && <DiaryViewer {...albumViewer} onClose={() => setAlbumViewer(null)} />}
       {monthlyExport && <AlbumExport logs={monthlyLogs} month={albumMonth} onClose={() => setMonthlyExport(false)} />}
+      {backupOpen && <DiaryBackup logs={logs} onClose={() => setBackupOpen(false)} />}
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (

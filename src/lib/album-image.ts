@@ -2,7 +2,21 @@ import { albumDate, albumPhotos, albumStats, careLabels, type AlbumLog } from '.
 
 const WIDTH = 1080;
 const MARGIN = 68;
-const FONT = '"Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+const FONT = '"ChiuFont", -apple-system, BlinkMacSystemFont, sans-serif';
+
+async function loadAlbumFont() {
+  try {
+    // Explicitly load the screen's existing font before measuring or drawing text.
+    // fonts.ready alone can resolve without loading a font not yet used on screen.
+    const faces = await Promise.all([
+      document.fonts.load('400 32px "ChiuFont"', '치우의 하루하루'),
+      document.fonts.load('700 48px "ChiuFont"', '치우의 하루하루'),
+    ]);
+    if (faces.some((loaded) => !loaded.length)) throw new Error('Font unavailable');
+  } catch {
+    throw new Error('앱 글꼴을 불러오지 못했어요. 네트워크 연결을 확인한 뒤 다시 시도해주세요.');
+  }
+}
 
 function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, size = 30, color = '#44403c', bold = false) {
   ctx.font = `${bold ? 700 : 400} ${size}px ${FONT}`;
@@ -105,7 +119,7 @@ function header(ctx: CanvasRenderingContext2D, title: string, subtitle: string) 
 }
 
 export async function dailyImage(log: AlbumLog, signal?: AbortSignal) {
-  await document.fonts.ready;
+  await loadAlbumFont();
   const measure = canvas(1);
   const memoLines = log.memo ? wrap(measure.ctx, log.memo, WIDTH - MARGIN * 2 - 48, 32) : [];
   const badges = [
@@ -132,7 +146,7 @@ export async function dailyImage(log: AlbumLog, signal?: AbortSignal) {
 
 export async function monthlyImage(logs: AlbumLog[], month: string, signal?: AbortSignal) {
   if (!logs.length) throw new Error('이 달에는 저장할 기록이 없어요.');
-  await document.fonts.ready;
+  await loadAlbumFont();
   const photos = albumPhotos(logs);
   const stats = albumStats(logs);
   const measure = canvas(1);

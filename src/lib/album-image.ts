@@ -18,9 +18,18 @@ async function loadAlbumFont() {
   }
 }
 
-function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, size = 30, color = '#44403c', bold = false) {
+function text(ctx: CanvasRenderingContext2D, value: string, x: number, y: number, size = 30, color = '#44403c', bold = false, verticallyCentered = false) {
   ctx.font = `${bold ? 700 : 400} ${size}px ${FONT}`;
   ctx.fillStyle = color;
+  if (verticallyCentered) {
+    // Font em-box alignment leaves this handwriting font visually too high.
+    // Center the actual ink (including emoji) around the line's midpoint instead.
+    ctx.textBaseline = 'alphabetic';
+    const metrics = ctx.measureText(value);
+    ctx.fillText(value, x, y + (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2);
+    ctx.textBaseline = 'top';
+    return;
+  }
   ctx.fillText(value, x, y);
 }
 
@@ -138,7 +147,7 @@ export async function dailyImage(log: AlbumLog, signal?: AbortSignal) {
   badgeLines.forEach((line, index) => text(ctx, line, MARGIN, detailY + index * 42, 28, '#1d4ed8', true));
   if (memoLines.length) {
     box(ctx, MARGIN, memoY, size, memoLines.length * 48 + 48, '#ffffff');
-    memoLines.forEach((line, index) => text(ctx, line, MARGIN + 24, memoY + 24 + index * 48, 32));
+    memoLines.forEach((line, index) => text(ctx, line, MARGIN + 24, memoY + 48 + index * 48, 32, '#44403c', false, true));
   }
   text(ctx, '치우과 함께 쌓아가는 하루하루', MARGIN, height - 64, 24, '#a8a29e');
   return { blob: await toBlob(element), filename: `치우_${log.date}.png` };

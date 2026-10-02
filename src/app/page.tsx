@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo } from 'react';
+import dynamic from 'next/dynamic';
+import { chronologicalLogs, monthLogs } from '@/lib/diary-album';
 import { supabase } from '@/lib/supabase';
 import imageCompression from 'browser-image-compression';
 import { 
@@ -27,11 +29,18 @@ import {
   Scale,
   Trophy,
   Download,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Play,
+  Images
 } from 'lucide-react';
+
+const DiaryViewer = dynamic(() => import('@/components/DiaryViewer'), { ssr: false });
+const AlbumExport = dynamic(() => import('@/components/AlbumExport'), { ssr: false });
 
 // 치우 생일 상수
 const CHIU_BIRTHDAY = '2023-11-23';
+
+const requestLogs = () => supabase.from('daily_logs').select('*').order('date', { ascending: false });
 
 // 1. 한국 로컬 날짜(YYYY-MM-DD) 생성 헬퍼
 const getLocalDateString = (d: Date = new Date()) => {
@@ -177,7 +186,8 @@ export default function Home() {
   // 탭 상태
   const [activeTab, setActiveTab] = useState<'write' | 'feed' | 'calendar'>('write');
   const [feedViewMode, setFeedViewMode] = useState<'card' | 'grid'>('card');
-  const [selectedPhotoLog, setSelectedPhotoLog] = useState<DailyLog | null>(null);
+  const [albumViewer, setAlbumViewer] = useState<{ logs: DailyLog[]; initialId: string; autoplay: boolean } | null>(null);
+  const [monthlyExport, setMonthlyExport] = useState(false);
 
   // 수정 상태 및 원본 사진 URL
   const [editingLogId, setEditingLogId] = useState<string | null>(null);
@@ -217,11 +227,7 @@ export default function Home() {
   // 데이터 불러오기
   const fetchLogs = async () => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('daily_logs')
-        .select('*')
-        .order('date', { ascending: false });
+      const { data, error } = await requestLogs();
 
       if (error) throw error;
       setLogs(data || []);
@@ -229,12 +235,20 @@ export default function Home() {
       console.error('기록 불러오기 실패:', err);
     } finally {
       setLoading(false);
+      setChiuAgeText(getChiuAge().formatted);
     }
   };
 
   useEffect(() => {
-    fetchLogs();
-    setChiuAgeText(getChiuAge().formatted);
+    let cancelled = false;
+    requestLogs().then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) console.error('기록 불러오기 실패:', error);
+      else setLogs(data || []);
+      setLoading(false);
+      setChiuAgeText(getChiuAge().formatted);
+    });
+    return () => { cancelled = true; };
   }, []);
 
   // 심장사상충 D-Day 계산
@@ -515,6 +529,16 @@ export default function Home() {
     return filteredLogs.filter((log) => Boolean(log.photo_url));
   }, [filteredLogs]);
 
+  const albumMonth = `${filterMonthDate.getFullYear()}-${String(filterMonthDate.getMonth() + 1).padStart(2, '0')}`;
+  const monthlyLogs = useMemo(() => monthLogs(logs, albumMonth), [logs, albumMonth]);
+  const openViewer = (log: DailyLog, sequence: DailyLog[]) => {
+    setAlbumViewer({ logs: chronologicalLogs(sequence), initialId: log.id, autoplay: false });
+  };
+  const startSlideshow = () => {
+    const sequence = chronologicalLogs(photoOnlyLogs);
+    if (sequence.length) setAlbumViewer({ logs: sequence, initialId: sequence[0].id, autoplay: true });
+  };
+
   // 통계 계산 (수면 통계 포함)
   const monthlyStats = useMemo(() => {
     const year = filterMonthDate.getFullYear();
@@ -584,7 +608,7 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-1 text-blue-600 mb-0.5">
                 <Sparkles className="w-3 h-3 text-amber-500" />
-                <span className="text-[10px] font-black tracking-widest uppercase">Chiu's Daily Diary</span>
+                <span className="text-[10px] font-black tracking-widest uppercase">Chiu&apos;s Daily Diary</span>
               </div>
               <h1 className="text-2xl font-black text-amber-950 tracking-tight flex items-center gap-1.5">
                 치우의 하루하루 🐾
@@ -990,6 +1014,12 @@ export default function Home() {
               </div>
             </div>
 
+            <div className="grid grid-cols-2 gap-2">
+              <button onClick={startSlideshow} disabled={loading || !photoOnlyLogs.length} className="flex justify-center items-center gap-1.5 rounded-2xl bg-blue-600 text-white py-3 text-xs font-bold disabled:opacity-40"><Play className="w-4 h-4" />추억 보기</button>
+              <button onClick={() => setMonthlyExport(true)} disabled={loading || !monthlyLogs.length || showAllMonths} className="flex justify-center items-center gap-1.5 rounded-2xl bg-white border border-amber-100 text-amber-950 py-3 text-xs font-bold disabled:opacity-40"><Images className="w-4 h-4" />월간 앨범</button>
+            </div>
+            {showAllMonths && <p className="text-[11px] text-stone-500 px-1">월간 앨범은 ‘월별’에서 저장할 달을 선택해주세요.</p>}
+
             {loading ? (
               <div className="text-center py-16 text-amber-800/60">
                 <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2 text-blue-600" />
@@ -1008,9 +1038,11 @@ export default function Home() {
                   </div>
                 ) : (
                   photoOnlyLogs.map((log) => (
-                    <div
+                    <button
+                      type="button"
+                      aria-label={`${formatDate(log.date)} 추억 보기`}
                       key={log.id}
-                      onClick={() => setSelectedPhotoLog(log)}
+                      onClick={() => openViewer(log, photoOnlyLogs)}
                       className="relative aspect-square rounded-2xl overflow-hidden bg-stone-100 border border-amber-100 active:scale-95 transition-all cursor-pointer group"
                     >
                       <img
@@ -1022,7 +1054,7 @@ export default function Home() {
                       {log.walked && (
                         <span className="absolute bottom-1 right-1 text-xs drop-shadow">🐾</span>
                       )}
-                    </div>
+                    </button>
                   ))
                 )}
               </div>
@@ -1044,6 +1076,7 @@ export default function Home() {
                       )}
                     </div>
                     <div className="flex items-center gap-1">
+                      <button aria-label={`${formatDate(log.date)} 기록 보기·저장`} onClick={() => openViewer(log, filteredLogs)} className="p-1.5 text-blue-600 rounded-lg"><Download className="w-4 h-4" /></button>
                       <button
                         aria-label={`${formatDate(log.date)} 기록 수정`}
                         onClick={() => handleStartEdit(log)}
@@ -1217,7 +1250,7 @@ export default function Home() {
                   return (
                     <div
                       key={dateStr}
-                      onClick={() => log && setSelectedPhotoLog(log)}
+                      onClick={() => log && openViewer(log, monthlyLogs)}
                       className={`relative aspect-square rounded-xl overflow-hidden border bg-stone-50/50 flex flex-col justify-between p-1 transition-all ${
                         log ? 'cursor-pointer active:scale-95' : ''
                       } ${
@@ -1298,7 +1331,7 @@ export default function Home() {
               </div>
 
               <p className="text-[11px] text-amber-100 text-center font-bold">
-                "이번 달도 치우와 함께 씩씩하고 행복하게 보냈어요! 🐕💛"
+                &quot;이번 달도 치우와 함께 씩씩하고 행복하게 보냈어요! 🐕💛&quot;
               </p>
             </div>
 
@@ -1328,81 +1361,8 @@ export default function Home() {
 
       </div>
 
-      {/* 갤러리 및 달력 상세 팝업 모달 */}
-      {selectedPhotoLog && (
-        <div 
-          onClick={() => setSelectedPhotoLog(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-xs p-4 animate-in fade-in duration-150"
-        >
-          <div 
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-3xl overflow-hidden max-w-xs w-full shadow-2xl space-y-3 pb-4"
-          >
-            {selectedPhotoLog.photo_url ? (
-              <div className="relative aspect-square w-full bg-stone-100">
-                <img src={selectedPhotoLog.photo_url} alt="" className="w-full h-full object-cover" />
-                <button 
-                  aria-label="상세 기록 닫기"
-                  onClick={() => setSelectedPhotoLog(null)}
-                  className="absolute top-2 right-2 p-1.5 bg-black/60 text-white rounded-full"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            ) : (
-              <div className="p-3 text-right">
-                <button 
-                  aria-label="상세 기록 닫기"
-                  onClick={() => setSelectedPhotoLog(null)}
-                  className="p-1 text-stone-400 hover:text-stone-600 rounded-full"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-            
-            <div className="px-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-black text-amber-950">{formatDate(selectedPhotoLog.date)}</span>
-                <div className="flex items-center gap-1">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${
-                    (selectedPhotoLog.sleep_well ?? true) 
-                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-100' 
-                      : 'bg-rose-50 text-rose-700 border border-rose-200'
-                  }`}>
-                    {(selectedPhotoLog.sleep_well ?? true) ? '🌙 꿀잠' : '🌧️ 뒤척임'}
-                  </span>
-                  {selectedPhotoLog.walked && <span className="text-xs font-bold text-blue-600">🐾 산책함</span>}
-                  {selectedPhotoLog.weight && (
-                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-100">
-                      {selectedPhotoLog.weight}kg
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* 케어 요약 */}
-              <div className="flex flex-wrap gap-1 pt-1">
-                {selectedPhotoLog.bath && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">목욕</span>}
-                {selectedPhotoLog.ear_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">귀청소</span>}
-                {selectedPhotoLog.play && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">발톱</span>}
-                {selectedPhotoLog.paw_clean && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">클린발</span>}
-                {selectedPhotoLog.paw_moist && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">매끈발</span>}
-                {selectedPhotoLog.brush && <span className="px-1.5 py-0.5 bg-amber-50 text-amber-800 text-[10px] rounded font-bold">빗질</span>}
-                {selectedPhotoLog.heartworm && <span className="px-1.5 py-0.5 bg-blue-600 text-white text-[10px] rounded font-bold">사상충</span>}
-                {selectedPhotoLog.hospital && <span className="px-1.5 py-0.5 bg-emerald-600 text-white text-[10px] rounded font-bold">병원</span>}
-                {selectedPhotoLog.condition_bad && <span className="px-1.5 py-0.5 bg-rose-500 text-white text-[10px] rounded font-bold">컨디션↓</span>}
-              </div>
-
-              {selectedPhotoLog.memo && (
-                <p className="text-xs text-stone-600 bg-stone-50 p-2.5 rounded-xl whitespace-pre-wrap">
-                  {selectedPhotoLog.memo}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {albumViewer && <DiaryViewer {...albumViewer} onClose={() => setAlbumViewer(null)} />}
+      {monthlyExport && <AlbumExport logs={monthlyLogs} month={albumMonth} onClose={() => setMonthlyExport(false)} />}
 
       {/* 삭제 확인 모달 */}
       {deleteTarget && (

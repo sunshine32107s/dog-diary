@@ -126,7 +126,7 @@ export async function dailyImage(log: AlbumLog, signal?: AbortSignal) {
     box(ctx, MARGIN, memoY, size, memoLines.length * 48 + 48, '#ffffff');
     memoLines.forEach((line, index) => text(ctx, line, MARGIN + 24, memoY + 24 + index * 48, 32));
   }
-  text(ctx, '치우와 함께 쌓아가는 작은 추억', MARGIN, height - 64, 24, '#a8a29e');
+  text(ctx, '치우과 함께 쌓아가는 하루하루', MARGIN, height - 64, 24, '#a8a29e');
   return { blob: await toBlob(element), filename: `치우_${log.date}.png` };
 }
 
